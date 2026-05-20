@@ -1,0 +1,7 @@
+apiVersion: example.org/v1alpha1
+kind: XNamespace
+metadata:
+  name: bus
+  namespace: platform
+spec:
+  environment: dev

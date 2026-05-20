@@ -1,0 +1,9 @@
+apiVersion: example.org/v1alpha1
+kind: XTopic
+metadata:
+  name: orders
+spec:
+  environment: int
+  serviceBusRef:
+    name: bus
+    namespace: platform
