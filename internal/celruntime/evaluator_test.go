@@ -82,6 +82,21 @@ func TestEvalStringRequiresStringResult(t *testing.T) {
 	}
 }
 
+func TestEvalBoolTreatsDeclaredNilAliasPathAsNull(t *testing.T) {
+	ev, err := New([]string{"required.namespace"}, map[string]any{"required": map[string]any{"namespace": nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ev.EvalBool(context.Background(), `required.namespace == null`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Fatal("EvalBool() = false, want true")
+	}
+}
+
 func TestEvalBoolHonorsContextCancellation(t *testing.T) {
 	ev, err := newWithLimits([]string{"xs"}, map[string]any{"xs": []int64{1, 2, 3}}, evaluatorLimits{
 		costLimit:               defaultCostLimit,
