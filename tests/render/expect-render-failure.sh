@@ -4,9 +4,11 @@ set -euo pipefail
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 set +e
-crossplane render tests/render/xr.yaml tests/render/composition.yaml tests/render/functions.yaml \
-  --extra-resources tests/render/extra-resources.yaml >"$tmp" 2>&1
+crossplane render "$script_dir/xr.yaml" "$script_dir/composition.yaml" "$script_dir/functions.yaml" \
+  --required-resources "$script_dir/extra-resources.yaml" >"$tmp" 2>&1
 status=$?
 set -e
 
