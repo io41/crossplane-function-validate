@@ -46,6 +46,42 @@ func TestBuildExposesXRSpec(t *testing.T) {
 	}
 }
 
+func TestBuildPreservesNilResourcePayloads(t *testing.T) {
+	req := &fnv1.RunFunctionRequest{
+		Observed: &fnv1.State{
+			Composite: &fnv1.Resource{},
+			Resources: map[string]*fnv1.Resource{
+				"empty": {},
+			},
+		},
+		Desired: &fnv1.State{Composite: &fnv1.Resource{}},
+	}
+	m, err := Build(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Aliases["xr"]; got != nil {
+		t.Fatalf("xr = %#v, want nil", got)
+	}
+	if got := m.Aliases["context"]; len(got.(map[string]any)) != 0 {
+		t.Fatalf("context = %#v, want empty map", got)
+	}
+
+	observed := m.Aliases["observed"].(map[string]any)
+	if got := observed["composite"]; got != nil {
+		t.Fatalf("observed.composite = %#v, want nil", got)
+	}
+	observedResources := observed["resources"].(map[string]any)
+	if got := observedResources["empty"]; got != nil {
+		t.Fatalf("observed.resources.empty = %#v, want nil", got)
+	}
+
+	desired := m.Aliases["desired"].(map[string]any)
+	if got := desired["composite"]; got != nil {
+		t.Fatalf("desired.composite = %#v, want nil", got)
+	}
+}
+
 func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
 	t.Helper()
 	s, err := structpb.NewStruct(m)
