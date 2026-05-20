@@ -13,19 +13,41 @@ import (
 )
 
 const (
-	defaultCostLimit uint64 = 100000
-	defaultTimeout          = 2 * time.Second
+	defaultCostLimit               uint64 = 100000
+	defaultInterruptCheckFrequency uint   = 100
+	defaultTimeout                        = 2 * time.Second
 )
 
 type Evaluator struct {
 	env    *cel.Env
 	values map[string]any
+	limits evaluatorLimits
+}
+
+type evaluatorLimits struct {
+	costLimit               uint64
+	interruptCheckFrequency uint
+	timeout                 time.Duration
 }
 
 func New(aliases []string, values map[string]any) (*Evaluator, error) {
+	return newWithLimits(aliases, values, evaluatorLimits{
+		costLimit:               defaultCostLimit,
+		interruptCheckFrequency: defaultInterruptCheckFrequency,
+		timeout:                 defaultTimeout,
+	})
+}
+
+func newWithLimits(aliases []string, values map[string]any, limits evaluatorLimits) (*Evaluator, error) {
 	roots, err := aliasRoots(aliases)
 	if err != nil {
 		return nil, err
+	}
+	if limits.interruptCheckFrequency == 0 {
+		return nil, fmt.Errorf("interrupt check frequency must be greater than 0")
+	}
+	if limits.timeout <= 0 {
+		return nil, fmt.Errorf("timeout must be greater than 0")
 	}
 
 	options := make([]cel.EnvOption, 0, len(roots))
@@ -40,7 +62,7 @@ func New(aliases []string, values map[string]any) (*Evaluator, error) {
 		return nil, fmt.Errorf("create CEL environment: %w", err)
 	}
 
-	return &Evaluator{env: env, values: evalValues}, nil
+	return &Evaluator{env: env, values: evalValues, limits: limits}, nil
 }
 
 func (e *Evaluator) EvalBool(ctx context.Context, expr string) (bool, error) {
@@ -84,12 +106,15 @@ func (e *Evaluator) eval(ctx context.Context, expr string) (ref.Val, error) {
 		return nil, fmt.Errorf("compile CEL expression %q: %w", expr, issues.Err())
 	}
 
-	program, err := e.env.Program(ast, cel.CostLimit(defaultCostLimit))
+	program, err := e.env.Program(ast,
+		cel.CostLimit(e.limits.costLimit),
+		cel.InterruptCheckFrequency(e.limits.interruptCheckFrequency),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create CEL program for %q: %w", expr, err)
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	runCtx, cancel := context.WithTimeout(ctx, e.limits.timeout)
 	defer cancel()
 
 	out, _, err := program.ContextEval(runCtx, e.values)
