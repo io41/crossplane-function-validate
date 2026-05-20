@@ -1,0 +1,11 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-validate
+  annotations:
+    meta.crossplane.io/maintainer: Tim Kersten
+    meta.crossplane.io/source: github.com/io41/crossplane-function-validate
+    meta.crossplane.io/license: Apache-2.0
+spec:
+  capabilities:
+    - composition
