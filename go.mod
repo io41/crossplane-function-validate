@@ -2,7 +2,10 @@ module github.com/io41/crossplane-function-validate
 
 go 1.25.0
 
-require github.com/crossplane/function-sdk-go v0.6.2
+require (
+	github.com/crossplane/function-sdk-go v0.6.2
+	k8s.io/apimachinery v0.35.1
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
@@ -74,7 +77,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.35.1 // indirect
 	k8s.io/apiextensions-apiserver v0.35.0 // indirect
-	k8s.io/apimachinery v0.35.1 // indirect
 	k8s.io/client-go v0.35.0 // indirect
 	k8s.io/code-generator v0.35.0 // indirect
 	k8s.io/gengo/v2 v2.0.0-20251215205346-5ee0d033ba5b // indirect
