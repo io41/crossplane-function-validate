@@ -26,7 +26,7 @@
 - Create `fn.go`: `RunFunction` orchestration and Crossplane response handling.
 - Create `input/v1alpha1/rules.go`: public function input types, defaulting, and structural validation.
 - Create `internal/celruntime/evaluator.go`: small wrapper around cel-go for strict aliases, bool evaluation, string evaluation, and bounded execution.
-- Create `internal/model/model.go`: converts Crossplane request data into the stable CEL alias map.
+- Create `internal/model/model.go`: converts Crossplane request data into the stable CEL alias map. v1 does not expose a `claim` alias because Crossplane function requests do not include the claim object.
 - Create `internal/requiredresources/requirements.go`: resolves `nameFrom` and `namespaceFrom`, returns Crossplane required-resource selectors, and reads resolved resources back into the alias map.
 - Create `internal/validation/engine.go`: evaluates `when` and `assert` expressions in rule order and aggregates user-facing failures.
 - Create tests beside each package.
@@ -240,11 +240,32 @@ func TestRulesValidateRejectsInvalidKyvernoMode(t *testing.T) {
 
 func TestRulesValidateRejectsRequiredInputWithoutName(t *testing.T) {
 	r := &Rules{Spec: RulesSpec{Inputs: Inputs{Required: map[string]RequiredResource{
-		"namespace": {APIVersion: "example.org/v1", Kind: "XNamespace"},
+		"namespace": {APIVersion: "example.org/v1", Kind: "XNamespace", Namespace: "platform"},
 	}}, Rules: []Rule{{ID: "r1", Uses: []string{"required.namespace"}, Assert: "true", Message: "ok"}}}}
 	err := r.Validate()
 	if err == nil || !strings.Contains(err.Error(), `required input "namespace" must set name or nameFrom`) {
 		t.Fatalf("Validate() error = %v, want required input name error", err)
+	}
+}
+
+func TestRulesValidateRejectsRequiredInputWithoutNamespace(t *testing.T) {
+	r := &Rules{Spec: RulesSpec{Inputs: Inputs{Required: map[string]RequiredResource{
+		"namespace": {APIVersion: "example.org/v1", Kind: "XNamespace", Name: "bus"},
+	}}, Rules: []Rule{{ID: "r1", Uses: []string{"required.namespace"}, Assert: "true", Message: "ok"}}}}
+	err := r.Validate()
+	if err == nil || !strings.Contains(err.Error(), `required input "namespace" must set namespace or namespaceFrom`) {
+		t.Fatalf("Validate() error = %v, want required input namespace error", err)
+	}
+}
+
+func TestRulesValidateRejectsClaimAlias(t *testing.T) {
+	r := &Rules{Spec: RulesSpec{Rules: []Rule{{
+		ID: "claim", Uses: []string{"claim"}, Assert: "claim != null", Message: "ok",
+	}}}}
+	r.Default()
+	err := r.Validate()
+	if err == nil || !strings.Contains(err.Error(), `claim is not available in v1`) {
+		t.Fatalf("Validate() error = %v, want unsupported claim alias error", err)
 	}
 }
 ```
@@ -269,6 +290,7 @@ package v1alpha1
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -350,6 +372,9 @@ func (r *Rules) Validate() error {
 		if rr.Name == "" && rr.NameFrom == "" {
 			return fmt.Errorf("required input %q must set name or nameFrom", name)
 		}
+		if rr.Namespace == "" && rr.NamespaceFrom == "" {
+			return fmt.Errorf("required input %q must set namespace or namespaceFrom", name)
+		}
 	}
 
 	seen := map[string]struct{}{}
@@ -363,6 +388,11 @@ func (r *Rules) Validate() error {
 		seen[rule.ID] = struct{}{}
 		if len(rule.Uses) == 0 {
 			return fmt.Errorf("rule %q must set uses", rule.ID)
+		}
+		for _, use := range rule.Uses {
+			if aliasRoot(use) == "claim" {
+				return fmt.Errorf("rule %q uses unsupported alias %q; claim is not available in v1", rule.ID, use)
+			}
 		}
 		if rule.Assert == "" {
 			return fmt.Errorf("rule %q must set assert", rule.ID)
@@ -386,6 +416,11 @@ func (r *Rules) RequiredInputNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func aliasRoot(alias string) string {
+	root, _, _ := strings.Cut(alias, ".")
+	return root
 }
 ```
 
@@ -613,26 +648,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestBuildBindsAbsentClaimToNil(t *testing.T) {
-	req := &fnv1.RunFunctionRequest{
-		Observed: &fnv1.State{Composite: &fnv1.Resource{Resource: mustStruct(t, map[string]any{
-			"apiVersion": "example.org/v1",
-			"kind": "XR",
-			"spec": map[string]any{"environment": "dev"},
-		})}},
-	}
-	m, err := Build(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := m.Aliases["claim"]; !ok {
-		t.Fatal("claim alias missing")
-	}
-	if m.Aliases["claim"] != nil {
-		t.Fatalf("claim alias = %#v, want nil", m.Aliases["claim"])
-	}
-}
-
 func TestBuildExposesXRSpec(t *testing.T) {
 	req := &fnv1.RunFunctionRequest{
 		Observed: &fnv1.State{Composite: &fnv1.Resource{Resource: mustStruct(t, map[string]any{
@@ -695,7 +710,6 @@ func Build(req *fnv1.RunFunctionRequest) (*Model, error) {
 		return nil, fmt.Errorf("request is nil")
 	}
 	aliases := map[string]any{
-		"claim": nil,
 		"context": structToMap(req.GetContext()),
 		"observed": stateToMap(req.GetObserved()),
 		"desired": stateToMap(req.GetDesired()),
@@ -862,7 +876,7 @@ func BuildRequirements(ctx context.Context, rules *v1alpha1.Rules, aliases map[s
 		spec := rules.Spec.Inputs.Required[name]
 		matchName := spec.Name
 		namespace := spec.Namespace
-		ev, err := celruntime.New([]string{"xr", "claim", "context"}, aliases)
+		ev, err := celruntime.New([]string{"xr", "context"}, aliases)
 		if err != nil {
 			return nil, err
 		}
@@ -877,6 +891,9 @@ func BuildRequirements(ctx context.Context, rules *v1alpha1.Rules, aliases map[s
 			if err != nil {
 				return nil, fmt.Errorf("required input %q namespaceFrom: %w", name, err)
 			}
+		}
+		if namespace == "" {
+			return nil, fmt.Errorf("required input %q must resolve namespace or namespaceFrom", name)
 		}
 		selector := &fnv1.ResourceSelector{
 			ApiVersion: spec.APIVersion,
@@ -1563,7 +1580,7 @@ git commit -m "docs: document validation function"
 
 ## Plan Self-Review Checklist
 
-- Spec coverage: Tasks cover input API, strict `uses`, unstructured CEL values, absent claim behavior, required-resource selectors, not-found-as-null behavior, ordered evaluation, one aggregated fatal result, render fixture behavior, and v1 Kyverno non-generation.
+- Spec coverage: Tasks cover input API, strict `uses`, unstructured CEL values, no claim alias in v1, required-resource selectors, not-found-as-null behavior, ordered evaluation, one aggregated fatal result, render fixture behavior, and v1 Kyverno non-generation.
 - Test coverage: Unit tests cover each package boundary, and render tests cover the Crossplane CLI path.
 - Type consistency: Public input types live in `input/v1alpha1`; runtime packages consume those types consistently.
 - Scope control: Kyverno generation, CRD schema typing, remote clusters, HTTP/cloud APIs, and desired-resource mutation stay out of v1.

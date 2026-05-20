@@ -71,6 +71,7 @@ func TestBuildRequirementsAllowsLiteralNameAndNamespace(t *testing.T) {
 
 func TestBuildRequirementsRejectsForbiddenSelectorAliases(t *testing.T) {
 	for _, expr := range []string{
+		"claim.metadata.name",
 		"required.namespace.metadata.name",
 		"observed.composite.metadata.name",
 		"desired.composite.metadata.name",
@@ -78,12 +79,14 @@ func TestBuildRequirementsRejectsForbiddenSelectorAliases(t *testing.T) {
 		t.Run(expr, func(t *testing.T) {
 			rules := &v1alpha1.Rules{Spec: v1alpha1.RulesSpec{Inputs: v1alpha1.Inputs{Required: map[string]v1alpha1.RequiredResource{
 				"namespace": {
-					APIVersion: "example.org/v1",
-					Kind:       "XNamespace",
-					NameFrom:   expr,
+					APIVersion:    "example.org/v1",
+					Kind:          "XNamespace",
+					NameFrom:      expr,
+					NamespaceFrom: `"platform"`,
 				},
 			}}}}
 			aliases := map[string]any{
+				"claim":    map[string]any{"metadata": map[string]any{"name": "bus"}},
 				"required": map[string]any{"namespace": map[string]any{"metadata": map[string]any{"name": "bus"}}},
 				"observed": map[string]any{"composite": map[string]any{"metadata": map[string]any{"name": "bus"}}},
 				"desired":  map[string]any{"composite": map[string]any{"metadata": map[string]any{"name": "bus"}}},
@@ -93,6 +96,20 @@ func TestBuildRequirementsRejectsForbiddenSelectorAliases(t *testing.T) {
 				t.Fatal("BuildRequirements() error = nil, want forbidden alias error")
 			}
 		})
+	}
+}
+
+func TestBuildRequirementsRejectsMissingNamespace(t *testing.T) {
+	rules := &v1alpha1.Rules{Spec: v1alpha1.RulesSpec{Inputs: v1alpha1.Inputs{Required: map[string]v1alpha1.RequiredResource{
+		"namespace": {
+			APIVersion: "example.org/v1",
+			Kind:       "XNamespace",
+			Name:       "bus",
+		},
+	}}}}
+
+	if _, err := BuildRequirements(context.Background(), rules, map[string]any{}); err == nil {
+		t.Fatal("BuildRequirements() error = nil, want missing namespace error")
 	}
 }
 

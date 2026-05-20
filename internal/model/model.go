@@ -17,7 +17,6 @@ func Build(req *fnv1.RunFunctionRequest) (*Model, error) {
 	}
 
 	aliases := map[string]any{
-		"claim":    nil,
 		"context":  contextToMap(req.GetContext()),
 		"observed": stateToMap(req.GetObserved()),
 		"desired":  stateToMap(req.GetDesired()),

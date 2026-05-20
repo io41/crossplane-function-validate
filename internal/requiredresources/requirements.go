@@ -9,7 +9,7 @@ import (
 	"github.com/io41/crossplane-function-validate/internal/celruntime"
 )
 
-var selectorAliases = []string{"claim", "context", "xr"}
+var selectorAliases = []string{"context", "xr"}
 
 func BuildRequirements(ctx context.Context, rules *v1alpha1.Rules, aliases map[string]any) (map[string]*fnv1.ResourceSelector, error) {
 	if rules == nil {
@@ -44,6 +44,9 @@ func BuildRequirements(ctx context.Context, rules *v1alpha1.Rules, aliases map[s
 			if err != nil {
 				return nil, fmt.Errorf("required input %q namespaceFrom: %w", name, err)
 			}
+		}
+		if namespace == "" {
+			return nil, fmt.Errorf("required input %q must resolve namespace or namespaceFrom", name)
 		}
 
 		selector := &fnv1.ResourceSelector{

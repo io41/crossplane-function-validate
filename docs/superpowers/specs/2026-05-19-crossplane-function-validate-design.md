@@ -4,7 +4,7 @@
 
 `crossplane-function-validate` is a Go-based Crossplane composition function for render-time and reconcile-time validation. It lets composition authors move validation out of ad hoc template logic and into declarative CEL rules with clear, user-owned messages.
 
-The first version validates only data available through the Crossplane function pipeline: the composite resource, claim, pipeline context, observed and desired resources, and named required Kubernetes resources. It does not call arbitrary HTTP services, cloud APIs, or remote clusters, and it does not try to type-check rules against CRD schemas.
+The first version validates only data available through the Crossplane function pipeline: the composite resource, pipeline context, observed and desired resources, and named required Kubernetes resources. It does not call arbitrary HTTP services, cloud APIs, or remote clusters, and it does not try to type-check rules against CRD schemas.
 
 The design also leaves room for a future Kyverno generator. Rules can opt into, out of, or defer generated Kyverno rejection with `rejectWithKyverno`, so the same validation source can eventually support both Crossplane render failures and Kubernetes admission rejection where technically possible.
 
@@ -26,6 +26,7 @@ The design also leaves room for a future Kyverno generator. Rules can opt into, 
 - Query arbitrary HTTP endpoints, cloud provider APIs, or remote clusters in v1.
 - Mutate desired resources.
 - Replace XRD schema validation for simple static checks.
+- Expose claim resources in v1; Crossplane's function request does not provide the claim object directly.
 - Expose the raw Crossplane `RunFunctionRequest` as the public CEL API.
 - Type-check CEL rules against XRD or CRD OpenAPI schemas in v1.
 - Become a general policy engine.
@@ -39,15 +40,12 @@ The function accepts a `Rules` input document, resolves the declared inputs, com
 The CEL environment exposes stable aliases:
 
 - `xr`: the composite resource.
-- `claim`: the claim resource, when present.
 - `context`: Crossplane pipeline context.
 - `observed`: observed composed resources.
 - `desired`: desired composed resources.
 - `required`: named required Kubernetes resources.
 
 The v1 CEL environment uses unstructured JSON-compatible values. This keeps the first implementation independent of CRD schemas and works well for unknown composite and required-resource types. Field mistakes are caught through strict alias checks, CEL compilation where possible, and runtime developer errors. Schema-aware CEL typing may be added later.
-
-`claim` is always bound. When no claim exists, `claim` is `null`.
 
 Named required resources must be resolved through Crossplane's required resource mechanism, not a direct Kubernetes client. That keeps local `crossplane render` behavior aligned with in-cluster reconciliation.
 
@@ -60,7 +58,7 @@ The function must return the same requirements on later passes once the input da
 For v1:
 
 - `nameFrom` and `namespaceFrom` are evaluated before the referenced resource is available.
-- Selector expressions may use `xr`, `claim`, and initial pipeline `context`.
+- Selector expressions may use `xr` and initial pipeline `context`.
 - Selector expressions must not depend on `required`, `observed`, or `desired`.
 - The function translates the resolved literal name and namespace into Crossplane required-resource selectors.
 - A declared required-resource alias is always present in CEL rule evaluation.
@@ -115,7 +113,7 @@ Each required resource supports:
 - `nameFrom`: CEL expression that resolves the name.
 - `namespaceFrom`: CEL expression that resolves the namespace.
 
-At least one of `name` or `nameFrom` must be set. For namespaced resources, at least one of `namespace` or `namespaceFrom` must be set. Selector expressions must resolve to strings.
+At least one of `name` or `nameFrom` must be set. At least one of `namespace` or `namespaceFrom` must be set in v1, so name-based required-resource selectors do not accidentally target cluster-scoped resources. Selector expressions must resolve to strings.
 
 ### Rules
 
@@ -145,7 +143,7 @@ Rule messages should tell users what is wrong or what action to take. They shoul
 
 This field is intentionally named after the developer-facing outcome: invalid resources may be rejected by Kyverno before Crossplane reconciles them.
 
-Kyverno can evaluate more than just the submitted object. It can fetch same-cluster Kubernetes resources through context lookups or CEL resource helpers. Therefore, Kyverno eligibility is not limited to rules over `xr` or `claim`; it means the same result can be computed correctly during Kubernetes admission.
+Kyverno can evaluate more than just the submitted object. It can fetch same-cluster Kubernetes resources through context lookups or CEL resource helpers. Therefore, Kyverno eligibility is not limited to rules over `xr`; it means the same result can be computed correctly during Kubernetes admission.
 
 For v1, the function only parses, defaults, and validates the enum value for `rejectWithKyverno`. It does not generate Kyverno policies, and it does not reject rules because their future Kyverno translation may be impossible. For example, it does not prove whether `rejectWithKyverno: Always` can really be translated. That check belongs to the future Kyverno generator, where CEL AST analysis and Kyverno feature support are available.
 
@@ -192,7 +190,7 @@ A weaker message would describe the implementation formula instead of the contra
 message: required.namespace.spec.environment must equal xr.spec.environment.
 ```
 
-The latter may still be useful in logs, but it should not be the primary message shown to claim authors.
+The latter may still be useful in logs, but it should not be the primary message shown to resource authors.
 
 ## Testing Strategy
 
@@ -206,7 +204,6 @@ Required test areas:
 - Strict `uses` enforcement and undeclared alias references.
 - CEL compile and evaluation.
 - `when` preconditions.
-- Absent claim behavior.
 - Missing fields and `has()` behavior.
 - Required resource resolution.
 - Required resource not found behavior.

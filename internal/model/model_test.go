@@ -7,26 +7,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestBuildBindsAbsentClaimToNil(t *testing.T) {
-	req := &fnv1.RunFunctionRequest{
-		Observed: &fnv1.State{Composite: &fnv1.Resource{Resource: mustStruct(t, map[string]any{
-			"apiVersion": "example.org/v1",
-			"kind":       "XR",
-			"spec":       map[string]any{"environment": "dev"},
-		})}},
-	}
-	m, err := Build(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := m.Aliases["claim"]; !ok {
-		t.Fatal("claim alias missing")
-	}
-	if m.Aliases["claim"] != nil {
-		t.Fatalf("claim alias = %#v, want nil", m.Aliases["claim"])
-	}
-}
-
 func TestBuildExposesXRSpec(t *testing.T) {
 	req := &fnv1.RunFunctionRequest{
 		Observed: &fnv1.State{Composite: &fnv1.Resource{Resource: mustStruct(t, map[string]any{

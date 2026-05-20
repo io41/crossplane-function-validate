@@ -59,3 +59,4 @@ tests/render/expect-render-failure.sh
 - `rejectWithKyverno` parsing for future generated Kyverno rejection.
 
 v1 does not generate Kyverno policies, call cloud APIs, call arbitrary HTTP APIs, query remote clusters, or mutate desired resources.
+It also does not expose claim resources as CEL aliases; Crossplane function requests do not provide the claim object directly.

@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -94,6 +95,9 @@ func (r *Rules) Validate() error {
 		if rr.Name == "" && rr.NameFrom == "" {
 			return fmt.Errorf("required input %q must set name or nameFrom", name)
 		}
+		if rr.Namespace == "" && rr.NamespaceFrom == "" {
+			return fmt.Errorf("required input %q must set namespace or namespaceFrom", name)
+		}
 	}
 
 	seen := map[string]struct{}{}
@@ -107,6 +111,11 @@ func (r *Rules) Validate() error {
 		seen[rule.ID] = struct{}{}
 		if len(rule.Uses) == 0 {
 			return fmt.Errorf("rule %q must set uses", rule.ID)
+		}
+		for _, use := range rule.Uses {
+			if aliasRoot(use) == "claim" {
+				return fmt.Errorf("rule %q uses unsupported alias %q; claim is not available in v1", rule.ID, use)
+			}
 		}
 		if rule.Assert == "" {
 			return fmt.Errorf("rule %q must set assert", rule.ID)
@@ -136,4 +145,9 @@ func (r *Rules) RequiredInputNames() []string {
 	sort.Strings(names)
 
 	return names
+}
+
+func aliasRoot(alias string) string {
+	root, _, _ := strings.Cut(alias, ".")
+	return root
 }
