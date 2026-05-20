@@ -26,7 +26,7 @@ The design also leaves room for a future Kyverno generator. Rules can opt into, 
 - Query arbitrary HTTP endpoints, cloud provider APIs, or remote clusters in v1.
 - Mutate desired resources.
 - Replace XRD schema validation for simple static checks.
-- Expose claim resources in v1; Crossplane's function request does not provide the claim object directly.
+- Claim-resource CEL aliases in v1. Crossplane's function request does not provide the claim object directly.
 - Expose the raw Crossplane `RunFunctionRequest` as the public CEL API.
 - Type-check CEL rules against XRD or CRD OpenAPI schemas in v1.
 - Become a general policy engine.
