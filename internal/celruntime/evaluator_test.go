@@ -34,6 +34,42 @@ func TestEvalBoolRejectsUndeclaredAlias(t *testing.T) {
 	}
 }
 
+func TestEvalBoolRejectsUndeclaredAliasPath(t *testing.T) {
+	ev, err := New([]string{"required"}, map[string]any{"required": map[string]any{
+		"namespace": map[string]any{"metadata": map[string]any{"name": "allowed"}},
+		"other":     map[string]any{"metadata": map[string]any{"name": "blocked"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := ev.EvalBool(context.Background(), `required.namespace.metadata.name == "allowed"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed {
+		t.Fatal("EvalBool() = false, want true")
+	}
+
+	ev, err = New([]string{"required.namespace"}, map[string]any{"required": map[string]any{
+		"namespace": map[string]any{"metadata": map[string]any{"name": "allowed"}},
+		"other":     map[string]any{"metadata": map[string]any{"name": "blocked"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = ev.EvalBool(context.Background(), `required.namespace.metadata.name == "allowed"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed {
+		t.Fatal("EvalBool() = false, want true")
+	}
+	_, err = ev.EvalBool(context.Background(), `required.other != null`)
+	if err == nil {
+		t.Fatal("EvalBool() error = nil, want undeclared alias path error")
+	}
+}
+
 func TestEvalStringRequiresStringResult(t *testing.T) {
 	ev, err := New([]string{"xr"}, map[string]any{"xr": map[string]any{"spec": map[string]any{"replicas": 2}}})
 	if err != nil {

@@ -39,7 +39,7 @@ func New(aliases []string, values map[string]any) (*Evaluator, error) {
 }
 
 func newWithLimits(aliases []string, values map[string]any, limits evaluatorLimits) (*Evaluator, error) {
-	roots, err := aliasRoots(aliases)
+	roots, aliasTree, err := buildAliasTree(aliases)
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +51,10 @@ func newWithLimits(aliases []string, values map[string]any, limits evaluatorLimi
 	}
 
 	options := make([]cel.EnvOption, 0, len(roots))
-	evalValues := make(map[string]any, len(roots))
 	for _, root := range roots {
 		options = append(options, cel.Variable(root, cel.DynType))
-		evalValues[root] = values[root]
 	}
+	evalValues := pruneActivationValues(values, roots, aliasTree)
 
 	env, err := cel.NewEnv(options...)
 	if err != nil {
@@ -131,26 +130,97 @@ func (e *Evaluator) eval(ctx context.Context, expr string) (ref.Val, error) {
 	return out, nil
 }
 
-func aliasRoots(aliases []string) ([]string, error) {
-	seen := map[string]struct{}{}
+type aliasNode struct {
+	all      bool
+	children map[string]*aliasNode
+}
+
+func buildAliasTree(aliases []string) ([]string, map[string]*aliasNode, error) {
+	tree := map[string]*aliasNode{}
 	for _, alias := range aliases {
-		root := aliasRoot(alias)
-		if root == "" {
-			return nil, fmt.Errorf("alias must not be empty")
+		parts := strings.Split(alias, ".")
+		if hasEmptyPart(parts) {
+			return nil, nil, fmt.Errorf("alias must not be empty")
 		}
-		seen[root] = struct{}{}
+		root := parts[0]
+		node := tree[root]
+		if node == nil {
+			node = &aliasNode{}
+			tree[root] = node
+		}
+		node.add(parts[1:])
 	}
 
-	roots := make([]string, 0, len(seen))
-	for root := range seen {
+	roots := make([]string, 0, len(tree))
+	for root := range tree {
 		roots = append(roots, root)
 	}
 	sort.Strings(roots)
 
-	return roots, nil
+	return roots, tree, nil
 }
 
-func aliasRoot(alias string) string {
-	root, _, _ := strings.Cut(alias, ".")
-	return root
+func (n *aliasNode) add(parts []string) {
+	if n.all {
+		return
+	}
+	if len(parts) == 0 {
+		n.all = true
+		n.children = nil
+		return
+	}
+	if n.children == nil {
+		n.children = map[string]*aliasNode{}
+	}
+	child := n.children[parts[0]]
+	if child == nil {
+		child = &aliasNode{}
+		n.children[parts[0]] = child
+	}
+	child.add(parts[1:])
+}
+
+func hasEmptyPart(parts []string) bool {
+	for _, part := range parts {
+		if part == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func pruneActivationValues(values map[string]any, roots []string, aliasTree map[string]*aliasNode) map[string]any {
+	pruned := make(map[string]any, len(roots))
+	for _, root := range roots {
+		pruned[root] = pruneValue(values[root], aliasTree[root])
+	}
+	return pruned
+}
+
+func pruneValue(value any, node *aliasNode) any {
+	if node == nil {
+		return nil
+	}
+	if node.all {
+		return value
+	}
+
+	source, ok := value.(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+
+	pruned := make(map[string]any, len(node.children))
+	for name, child := range node.children {
+		if child.all {
+			if selected, ok := source[name]; ok {
+				pruned[name] = selected
+			}
+			continue
+		}
+		if selected, ok := source[name]; ok {
+			pruned[name] = pruneValue(selected, child)
+		}
+	}
+	return pruned
 }
